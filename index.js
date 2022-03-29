@@ -12,20 +12,13 @@ const APP_TRUST_PORT = '3000';
 
 const fs = require('fs').promises;
 
-const getTalkers = async () => {
-  try {
-      return await fs.readFile('./talker.json', 'utf-8');
+app.get('/talker', (req, res) => {
+  try { 
+    const talkerList = fs.readFile('./talker.json', 'utf8');
+    return res.status(HTTP_OK_STATUS).json(JSON.parse(talkerList));
   } catch (error) {
-    return error;
+    return res.status(HTTP_ERROR_STATUS).json([]);
   }
-};
-
-app.get('/talker', async (req, res) => {
-  const talkerList = await getTalkers();
-  if (!talkerList) {
-    return res.status(HTTP_OK_STATUS).json([]);
-  }
-  res.status(HTTP_OK_STATUS).json(JSON.parse(talkerList));
 });
 
 app.get('/talker/:id', async (req, res) => {
