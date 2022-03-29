@@ -6,6 +6,7 @@ app.use(bodyParser.json());
 
 const HTTP_OK_STATUS = 200;
 const HTTP_BAD_REQUEST = 400;
+const HTTP_UNAUTHORIZED = 401;
 const HTTP_ERROR_STATUS = 404;
 
 // Garante que o acesso será fixo na porta: 3000
@@ -52,6 +53,122 @@ const formPasswordValidation = (req, res, next) => {
   next();
 };
 
+const userTolkenCheckUp = (req, res, next) => {
+  const { authorization } = req.headers;
+
+  if (!authorization) {
+    return res.status(HTTP_UNAUTHORIZED).json({ message: 'Token não encontrado' });
+  }
+  if (authorization.length !== 16) {
+    return res.status(HTTP_UNAUTHORIZED).json({ message: 'Token inválido' });
+  }
+  next();
+};
+
+const formNewTalkerNameValidation = (req, res, next) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(HTTP_BAD_REQUEST).json({ message: 'O campo "name" é obrigatório' });
+  }
+  if (name.length < 3) {
+    return res.status(HTTP_BAD_REQUEST).json({ message: 'O "name" deve ter pelo menos 3 caracteres' });
+  }
+  next();
+};
+
+const formNewTalkerWatchedAtValidation = (req, res, next) => {
+  const { talk: { watchedAt } } = req.body;
+
+  if (!watchedAt) {
+    return res.status(HTTP_BAD_REQUEST)
+    .json({ message: 'O campo "talk" é obrigatório e "watchedAt" e "rate" não podem ser vazios' });
+  }
+  const arrayFormatWatchDate = watchedAt.split('/');
+  if (arrayFormatWatchDate[0].length !== 2 || arrayFormatWatchDate[1].length !== 2 || arrayFormatWatchDate[2].length !== 4) {
+    return res.status(HTTP_BAD_REQUEST).json({ message: 'O campo "watchedAt" deve ter o formato "dd/mm/aaaa"' });
+  }
+  next();
+};
+
+const formNewTalkerRateValidation = (req, res, next) => {
+  const { talk: { rate } } = req.body;
+
+  if (rate === undefined) {
+    return res.status(HTTP_BAD_REQUEST)
+    .json({ message: 'O campo "talk" é obrigatório e "watchedAt" e "rate" não podem ser vazios' });
+  }
+
+  const rateNumber = Number(rate);
+  if (!(rateNumber > 0 && rateNumber < 6)) {
+    return res.status(HTTP_BAD_REQUEST).json({ message: 'O campo "rate" deve ser um inteiro de 1 à 5' });
+  }
+  next();
+};
+
+const ageValidation = (req, res, next) => {
+  const { age } = req.body;
+
+  if (!age) {
+    return res.status(400).json({ message: 'O campo "age" é obrigatório' });
+  }
+
+  if (age < 18) {
+    return res.status(400).json({ message: 'A pessoa palestrante deve ser maior de idade' });
+  }
+
+  next();
+};
+
+const talkValidation = (req, res, next) => {
+  const { talk } = req.body;
+
+  if (!talk) {
+    return res.status(400)
+    .json({ message: 'O campo "talk" é obrigatório e "watchedAt" e "rate" não podem ser vazios' });
+  }
+
+  next();
+};
+
+const formNewTalkerValidation = async (req, res) => {
+  const { name, age, talk, watchedAt, rate } = req.body;
+
+  const dataTalkers = await fs.readFile('./talker.json').then((data) => JSON.parse(data));
+  const obj = { name, age, id: dataTalkers.length + 1, talk, watchedAt, rate };
+  dataTalkers.push(obj);
+  await fs.writeFile('./talker.json', JSON.stringify(dataTalkers));
+  return res.status(201).json(obj);
+};
+
+const formTalkerIdValidation = async (req, res) => {
+  const { id } = req.params;
+  const { name, age, talk: { watchedAt, rate } } = req.body;
+
+  const talkersSearch = await fs.readFile('./talker.json', 'utf8').then((data) => JSON.parse(data));
+  const talkersIndexAux = talkersSearch.findIndex((data) => data.id === Number(id));
+
+  talkersSearch[talkersIndexAux] = { ...talkersSearch[talkersIndexAux], name, age, talk: { watchedAt, rate } };
+
+  await fs.writeFile('./talker.json', JSON.stringify(talkersSearch));
+
+  return res.status(HTTP_OK_STATUS).json(talkersSearch[talkersIndexAux]);
+};
+
+const talkerDeleteCall = async (req, res) => {
+  const { id } = req.params;
+
+  const talkersSearch = await fs.readFile('./talker.json').then((data) => JSON.parse(data));
+
+  const talkersIndexAux = talkersSearch.findIndex((data) => data.id === Number(id));
+
+  talkersSearch.splice(talkersIndexAux, 1);
+
+  await fs.writeFile('./talker.json', JSON.stringify(talkersSearch));
+
+  res.status(204).json(talkersSearch[talkersIndexAux]);
+};
+
 app.get('/talker', async (req, res) => {
   const talkerList = await getTalkers();
   if (!talkerList) {
@@ -74,6 +191,26 @@ app.get('/talker/:id', async (req, res) => {
 });
 
 app.post('/login', formEmailValidation, formPasswordValidation, newToken);
+
+app.post('/talker', 
+  userTolkenCheckUp,
+  talkValidation, 
+  formNewTalkerWatchedAtValidation, 
+  formNewTalkerNameValidation,
+  ageValidation,
+  formNewTalkerRateValidation,
+  formNewTalkerValidation);
+
+app.put('/talker/:id', 
+  userTolkenCheckUp, 
+  formNewTalkerNameValidation, 
+  ageValidation, 
+  talkValidation, 
+  formNewTalkerWatchedAtValidation,
+  formNewTalkerRateValidation, 
+  formTalkerIdValidation);
+
+app.delete('/talker/:id', userTolkenCheckUp, talkerDeleteCall);
 
 app.get('/', (_request, response) => {
   response.status(HTTP_OK_STATUS).send();
