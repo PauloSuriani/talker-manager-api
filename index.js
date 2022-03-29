@@ -12,29 +12,33 @@ const APP_TRUST_PORT = '3000';
 
 const fs = require('fs').promises;
 
-app.get('/talker', (req, res) => {
-  try { 
-    const talkerList = fs.readFile('./talker.json', 'utf8');
-    return res.status(HTTP_OK_STATUS).json(JSON.parse(talkerList));
+const getTalkers = async () => {
+  try {
+      return await fs.readFile('./talker.json', 'utf-8');
   } catch (error) {
-    return res.status(HTTP_ERROR_STATUS).json([]);
+    return error;
   }
-});
+};
 
-app.get('/talker/:id', async (req, res) => {
-  const { id } = req.params;
-
+app.get('/talker', async (req, res) => {
   const talkerList = await getTalkers();
-
   if (!talkerList) {
     return res.status(HTTP_OK_STATUS).json([]);
   }
+  res.status(HTTP_OK_STATUS).json(JSON.parse(talkerList));
+});
 
-  const talkerById = JSON.parse(talkerList).find((talkerSearch) => talkerSearch.id === +id);
-  if (!talkerById) {
+app.get('/talker/:id', async (req, res) => {
+  const talkerList = await getTalkers();
+  const { id } = req.params;
+
+  const talkerById = JSON.parse(talkerList);
+  const foundTalker = talkerById.find((talkerSearch) => talkerSearch.id === +id);
+
+  if (!foundTalker) {
     return res.status(HTTP_ERROR_STATUS).json({ message: 'Pessoa palestrante não encontrada' });
   }
-  res.status(HTTP_OK_STATUS).json(JSON.parse(talkerById));
+  res.status(HTTP_OK_STATUS).json(foundTalker);
 });
 
 app.get('/', (_request, response) => {
