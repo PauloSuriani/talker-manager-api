@@ -3,17 +3,16 @@ const bodyParser = require('body-parser');
 
 const app = express();
 app.use(bodyParser.json());
-
 const HTTP_OK_STATUS = 200;
+const HTTP_CREATED = 201;
+const HTTP_NO_CONTENT = 204;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_ERROR_STATUS = 404;
-
 const talkerJsonPath = './talker.json';
 
 // Garante que o acesso será fixo na porta: 3000
 const APP_TRUST_PORT = '3000';
-
 const fs = require('fs').promises;
 const newToken = require('./generateToken');
 
@@ -46,7 +45,6 @@ const formPasswordValidation = (req, res, next) => {
   if (!password) {
     return res.status(HTTP_BAD_REQUEST).json({ message: 'O campo "password" é obrigatório' });
   }
-
   if (password.length < 6) {
     return res.status(HTTP_BAD_REQUEST).json({ 
       message: 'O "password" deve ter pelo menos 6 caracteres' });
@@ -55,7 +53,7 @@ const formPasswordValidation = (req, res, next) => {
   next();
 };
 
-const userTolkenCheckUp = (req, res, next) => {
+const userTokenCheckUp = (req, res, next) => {
   const { authorization } = req.headers;
 
   if (!authorization) {
@@ -121,7 +119,6 @@ const ageValidation = (req, res, next) => {
   if (!age) {
     return res.status(HTTP_BAD_REQUEST).json({ message: 'O campo "age" é obrigatório' });
   }
-
   if (age < 18) {
     return res.status(HTTP_BAD_REQUEST).json(
       { message: 'A pessoa palestrante deve ser maior de idade' },
@@ -145,18 +142,18 @@ const talkValidation = (req, res, next) => {
 const formNewTalkerValidation = async (req, res) => {
   const { name, age, talk, watchedAt, rate } = req.body;
 
-  const dataTalkers = await fs.readFile(talkerJsonPath).then((data) => JSON.parse(data));
+  const dataTalkers = await getTalkers().then((data) => JSON.parse(data));
   const obj = { name, age, id: dataTalkers.length + 1, talk, watchedAt, rate };
   dataTalkers.push(obj);
   await fs.writeFile(talkerJsonPath, JSON.stringify(dataTalkers));
-  return res.status(201).json(obj);
+  return res.status(HTTP_CREATED).json(obj);
 };
 
 const formTalkerIdValidation = async (req, res) => {
   const { id } = req.params;
   const { name, age, talk: { watchedAt, rate } } = req.body;
 
-  const talkersSearch = await fs.readFile(talkerJsonPath, 'utf8').then((data) => JSON.parse(data));
+  const talkersSearch = await getTalkers().then((data) => JSON.parse(data));
   const talkersIndexAux = talkersSearch.findIndex((data) => data.id === Number(id));
 
   talkersSearch[talkersIndexAux] = { ...talkersSearch[talkersIndexAux], 
@@ -172,7 +169,7 @@ const formTalkerIdValidation = async (req, res) => {
 const talkerDeleteCall = async (req, res) => {
   const { id } = req.params;
 
-  const talkersSearch = await fs.readFile(talkerJsonPath).then((data) => JSON.parse(data));
+  const talkersSearch = await getTalkers().then((data) => JSON.parse(data));
 
   const talkersIndexAux = talkersSearch.findIndex((data) => data.id === Number(id));
 
@@ -180,7 +177,7 @@ const talkerDeleteCall = async (req, res) => {
 
   await fs.writeFile(talkerJsonPath, JSON.stringify(talkersSearch));
 
-  res.status(204).json(talkersSearch[talkersIndexAux]);
+  res.status(HTTP_NO_CONTENT).json(talkersSearch[talkersIndexAux]);
 };
 
 app.get('/talker', async (req, res) => {
@@ -191,13 +188,22 @@ app.get('/talker', async (req, res) => {
   res.status(HTTP_OK_STATUS).json(JSON.parse(talkerList));
 });
 
+app.get('/talker/search', userTokenCheckUp, async (req, res) => {
+  const { q } = req.query;
+  const talkers = await getTalkers();
+  if (!talkers) {
+    return res.status(HTTP_UNAUTHORIZED).json({ message: 'talker not found' });
+  }
+  const talkersList = JSON.parse(talkers);
+  return res.status(HTTP_OK_STATUS).json(talkersList
+    .filter(((talker) => talker.name.includes(q))));
+});
+
 app.get('/talker/:id', async (req, res) => {
   const talkerList = await getTalkers();
   const { id } = req.params;
-
   const talkerById = JSON.parse(talkerList);
   const foundTalker = talkerById.find((talkerSearch) => talkerSearch.id === +id);
-
   if (!foundTalker) {
     return res.status(HTTP_ERROR_STATUS).json({ message: 'Pessoa palestrante não encontrada' });
   }
@@ -207,7 +213,7 @@ app.get('/talker/:id', async (req, res) => {
 app.post('/login', formEmailValidation, formPasswordValidation, newToken);
 
 app.post('/talker', 
-  userTolkenCheckUp,
+  userTokenCheckUp,
   talkValidation, 
   formNewTalkerWatchedAtValidation, 
   formNewTalkerNameValidation,
@@ -216,15 +222,15 @@ app.post('/talker',
   formNewTalkerValidation);
 
 app.put('/talker/:id', 
-  userTolkenCheckUp, 
+  userTokenCheckUp, 
   formNewTalkerNameValidation, 
   ageValidation, 
   talkValidation, 
   formNewTalkerWatchedAtValidation,
   formNewTalkerRateValidation, 
   formTalkerIdValidation);
-
-app.delete('/talker/:id', userTolkenCheckUp, talkerDeleteCall);
+  
+app.delete('/talker/:id', userTokenCheckUp, talkerDeleteCall);
 
 app.get('/', (_request, response) => {
   response.status(HTTP_OK_STATUS).send();
